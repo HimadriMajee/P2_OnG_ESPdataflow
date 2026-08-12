@@ -1,0 +1,75 @@
+version: "3.8"
+
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: esp-postgres
+    environment:
+      POSTGRES_USER: esp_admin
+      POSTGRES_PASSWORD: esp_admin_pw
+      POSTGRES_DB: esp_cmms
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./maintenance-db:/docker-entrypoint-initdb.d
+      - postgres-data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: esp-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@esp-kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://esp-kafka:29092,CONTROLLER://esp-kafka:9093,PLAINTEXT_HOST://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://esp-kafka:29092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: "DvXzgM5dTKG07Cw98FNacA"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  kafka-connect:
+    image: debezium/connect:2.6
+    container_name: esp-connect
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: "esp-kafka:29092"
+      GROUP_ID: "esp-connect-cluster"
+      CONFIG_STORAGE_TOPIC: "esp_connect_configs"
+      OFFSET_STORAGE_TOPIC: "esp_connect_offsets"
+      STATUS_STORAGE_TOPIC: "esp_connect_status"
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: esp-kafka-ui
+    depends_on:
+      - kafka
+      - kafka-connect
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "esp-local"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "esp-kafka:29092"
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: "esp-connect"
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: "http://esp-connect:8083"
+
+volumes:
+  postgres-data:
+  kafka-data:
